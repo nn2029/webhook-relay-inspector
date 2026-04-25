@@ -13,6 +13,8 @@ class Settings:
     webhook_signing_secret: str | None = None
     relay_signing_secret: str | None = None
     event_retention_limit: int = 1000
+    max_body_kb: int = 512
+    max_list_limit: int = 200
     rules_config_path: str | None = None
 
     @classmethod
@@ -27,10 +29,11 @@ class Settings:
             webhook_signing_secret=os.getenv("WEBHOOK_SIGNING_SECRET") or None,
             relay_signing_secret=os.getenv("RELAY_SIGNING_SECRET") or None,
             event_retention_limit=int(os.getenv("EVENT_RETENTION_LIMIT", "1000")),
+            max_body_kb=int(os.getenv("MAX_BODY_KB", "512")),
+            max_list_limit=int(os.getenv("MAX_LIST_LIMIT", "200")),
             rules_config_path=os.getenv("RULES_CONFIG_PATH") or None,
         )
 
 
 def get_settings() -> Settings:
     return Settings.from_env()
-

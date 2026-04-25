@@ -45,6 +45,21 @@ class InMemoryEventRepositoryTests(unittest.TestCase):
         self.assertEqual(len(events), 1)
         self.assertEqual(events[0].source, "stripe")
 
+    def test_add_if_new_reuses_existing_event_for_idempotency_key(self) -> None:
+        repository = InMemoryEventRepository()
+        first = make_event("evt_first", source="stripe")
+        first.idempotency_key = "stripe:evt_123"
+        second = make_event("evt_second", source="stripe")
+        second.idempotency_key = "stripe:evt_123"
+
+        saved_first, created_first = repository.add_if_new(first)
+        saved_second, created_second = repository.add_if_new(second)
+
+        self.assertTrue(created_first)
+        self.assertFalse(created_second)
+        self.assertEqual(saved_first.id, saved_second.id)
+        self.assertEqual([event.id for event in repository.list(limit=10)], ["evt_first"])
+
     def test_append_delivery_attempt_updates_event_status(self) -> None:
         repository = InMemoryEventRepository()
         event = repository.add(make_event("evt_delivery"))
@@ -84,4 +99,3 @@ class InMemoryRuleRepositoryTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

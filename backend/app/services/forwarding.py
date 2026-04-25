@@ -58,10 +58,9 @@ HOP_BY_HOP_HEADERS = {
 class ForwardingService:
     """Matches rules and delivers webhooks to downstream endpoints.
 
-    Retries are bounded and synchronous inside this service for the MVP. A
-    production version should move attempts into a durable queue with exponential
-    backoff, dead-letter handling, and an idempotency key carried through every
-    attempt.
+    Retries stay bounded here so a bad endpoint cannot trap the request worker.
+    The next step is a durable queue where each attempt carries the relay event
+    id as its idempotency key.
     """
 
     def __init__(
@@ -154,4 +153,3 @@ class ForwardingService:
                 self.relay_signing_secret, event.raw_body
             )
         return headers
-

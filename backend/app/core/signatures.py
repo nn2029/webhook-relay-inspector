@@ -25,7 +25,7 @@ def compute_hmac_signature(
     """
 
     if algorithm != "sha256":
-        raise ValueError("Only sha256 signatures are supported in the MVP")
+        raise ValueError("Only sha256 signatures are supported")
 
     digest = hmac.new(
         secret.encode("utf-8"),

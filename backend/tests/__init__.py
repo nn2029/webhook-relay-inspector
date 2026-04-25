@@ -1,2 +1,1 @@
-"""Unit tests for the webhook relay MVP."""
-
+"""Unit tests for webhook relay core behavior."""

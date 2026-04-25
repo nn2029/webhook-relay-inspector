@@ -1,8 +1,8 @@
 # Webhook Relay & Inspector
 
-A standalone local portfolio project for receiving webhooks, inspecting payloads
-in real time, replaying captured events, and forwarding matching events to
-configured endpoints.
+A standalone webhook relay for receiving events, inspecting payloads in real
+time, replaying captured requests, and forwarding matching events to configured
+endpoints.
 
 ## Architecture
 
@@ -10,7 +10,8 @@ configured endpoints.
 flowchart LR
   Provider["Webhook provider"] --> Ingress["FastAPI ingress<br/>POST /webhooks/{source}"]
   Ingress --> Verify["HMAC verification<br/>raw body + timestamp"]
-  Verify --> Store[("In-memory event repository<br/>MVP retention window")]
+  Verify --> Dedupe["Idempotency check"]
+  Dedupe --> Store[("In-memory event repository<br/>retention window")]
   Ingress --> Match["Forwarding rule matcher"]
   Match --> Forward["Forwarding service<br/>bounded retries"]
   Forward --> Receiver["Configured endpoint"]
@@ -18,7 +19,7 @@ flowchart LR
   WS --> UI["React/Vite inspector"]
   UI --> Replay["Replay API<br/>POST /events/{id}/replay"]
   Replay --> Forward
-  Store -. later .-> Postgres[("PostgreSQL<br/>events, rules, attempts")]
+  Store -. durable path .-> Postgres[("PostgreSQL<br/>events, rules, attempts")]
 ```
 
 ## Project Layout
@@ -29,7 +30,7 @@ backend/
     api/              FastAPI HTTP and WebSocket route factories
     core/             settings and HMAC signature helpers
     domain/           event, rule, attempt, and replay models
-    repositories/     in-memory MVP store plus PostgreSQL migration notes
+    repositories/     in-memory store plus PostgreSQL migration notes
     services/         forwarding, replay, and WebSocket fanout services
   tests/              focused stdlib unit tests
 frontend/
@@ -86,8 +87,8 @@ cp .env.example .env
 docker compose up --build
 ```
 
-The optional PostgreSQL service is available behind a profile for later adapter
-work:
+The optional PostgreSQL service is available behind a profile for persistence
+adapter work:
 
 ```bash
 docker compose --profile postgres up postgres
@@ -112,15 +113,19 @@ operate on the original payload, not a reformatted JSON body.
 
 Forwarding carries `x-relay-event-id`, `x-relay-source`, `x-relay-event-type`,
 and `x-relay-attempt` headers. Receivers can use those values for idempotency.
-Retries are bounded inside the request worker for the MVP; a production version
-should move delivery attempts into a durable queue with exponential backoff and a
-dead-letter path.
+Retries are bounded inside the request worker so a slow receiver cannot trap the
+service forever. The next step is a durable delivery queue with exponential
+backoff and a dead-letter path.
 
-Event retention is count-based in memory. This is a deliberate MVP compromise:
-it keeps the demo easy to run locally, but events are lost on restart. The
+Webhook retries are handled with idempotency keys from headers such as
+`x-idempotency-key`, `x-webhook-id`, `x-github-delivery`, or a JSON `id`.
+Duplicate deliveries return the original event instead of forwarding twice.
+
+Event retention is count-based in memory, so events are lost on restart. The
 repository methods and `backend/app/repositories/postgres_plan.py` show the
 straight path to PostgreSQL tables for durable event history, replay audit, and
-scheduled retention cleanup.
+scheduled retention cleanup. The API also caps body size and event list limits
+so local runs behave like a service with real operating boundaries.
 
 Security defaults favor local development. Set `WEBHOOK_SIGNING_SECRET` to
 require inbound HMAC verification, and set `RELAY_SIGNING_SECRET` to sign

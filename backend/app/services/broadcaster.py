@@ -6,8 +6,8 @@ from typing import Any
 class ConnectionManager:
     """Small WebSocket fanout helper.
 
-    Live updates are best-effort in the MVP. The authoritative event history is
-    the repository; disconnected clients can refresh via HTTP after reconnecting.
+    Live updates are best-effort. The repository remains the source of truth, so
+    a disconnected browser can catch up through HTTP after reconnecting.
     """
 
     def __init__(self) -> None:
@@ -29,4 +29,3 @@ class ConnectionManager:
                 stale_connections.append(websocket)
         for websocket in stale_connections:
             self.disconnect(websocket)
-

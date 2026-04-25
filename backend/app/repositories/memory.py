@@ -12,34 +12,39 @@ from app.domain.models import (
 
 
 class InMemoryEventRepository:
-    """Thread-safe in-memory event store for the MVP.
+    """Thread-safe event store with count-based retention.
 
-    This is intentionally simple for local demos and portfolio review. The
-    compromise is that events disappear on process restart and retention is only
-    count-based. The repository shape mirrors what a PostgreSQL implementation
-    would need later: insert, lookup, append delivery attempt, list newest, and
-    prune retained events.
+    The methods mirror the database operations this service would keep in SQL:
+    insert once, find by idempotency key, append delivery attempts, list newest,
+    and prune old rows. The storage is still process-local; the boundary is the
+    part worth demonstrating.
     """
 
     def __init__(self, retention_limit: int = 1000) -> None:
         self.retention_limit = retention_limit
         self._events: dict[str, WebhookEvent] = {}
+        self._idempotency_index: dict[str, str] = {}
         self._order: deque[str] = deque()
         self._lock = RLock()
 
     def add(self, event: WebhookEvent) -> WebhookEvent:
-        """Add or replace an event by id without duplicating list order.
+        saved, _ = self.add_if_new(event)
+        return saved
 
-        The replacement behavior is a small idempotency guard for tests,
-        retries, or future ingestion paths that may submit the same event id.
-        """
-
+    def add_if_new(self, event: WebhookEvent) -> tuple[WebhookEvent, bool]:
         with self._lock:
+            if event.idempotency_key:
+                existing_id = self._idempotency_index.get(event.idempotency_key)
+                if existing_id and existing_id in self._events:
+                    return self._events[existing_id], False
+
             if event.id not in self._events:
                 self._order.append(event.id)
             self._events[event.id] = event
+            if event.idempotency_key:
+                self._idempotency_index[event.idempotency_key] = event.id
             self._prune_locked()
-            return event
+            return event, True
 
     def get(self, event_id: str) -> WebhookEvent | None:
         with self._lock:
@@ -85,16 +90,13 @@ class InMemoryEventRepository:
     def _prune_locked(self) -> None:
         while len(self._order) > self.retention_limit:
             oldest_id = self._order.popleft()
-            self._events.pop(oldest_id, None)
+            event = self._events.pop(oldest_id, None)
+            if event and event.idempotency_key:
+                self._idempotency_index.pop(event.idempotency_key, None)
 
 
 class InMemoryRuleRepository:
-    """In-memory forwarding rule store.
-
-    Rules use the same repository contract a database adapter can implement
-    later. PostgreSQL would add ownership, audit history, and encryption for
-    secret endpoint credentials.
-    """
+    """In-memory forwarding rule store with a database-friendly contract."""
 
     def __init__(self) -> None:
         self._rules: dict[str, ForwardingRule] = {}
@@ -126,4 +128,3 @@ class InMemoryRuleRepository:
     def delete(self, rule_id: str) -> bool:
         with self._lock:
             return self._rules.pop(rule_id, None) is not None
-

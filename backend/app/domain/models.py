@@ -88,6 +88,7 @@ class WebhookEvent:
     json_payload: Any | None
     event_type: str | None = None
     signature_valid: bool | None = None
+    idempotency_key: str | None = None
     id: str = field(default_factory=lambda: new_id("evt"))
     status: EventStatus = EventStatus.RECEIVED
     received_at: datetime = field(default_factory=utc_now)
@@ -116,6 +117,7 @@ class WebhookEvent:
             "body_text": self.body_text,
             "event_type": self.event_type,
             "signature_valid": self.signature_valid,
+            "idempotency_key": self.idempotency_key,
             "status": self.status.value,
             "received_at": self.received_at.isoformat(),
             "delivery_attempts": [
@@ -129,9 +131,9 @@ class WebhookEvent:
 class ForwardingRule:
     """Rule deciding whether an event should be forwarded.
 
-    Rule matching is deliberately explicit: source, event type, and selected
-    headers. That makes forwarding auditable and avoids accidentally relaying
-    every inbound webhook to a sensitive endpoint.
+    Rule matching stays explicit: source, event type, and selected headers.
+    That makes forwarding auditable and avoids accidentally relaying every
+    inbound webhook to a sensitive endpoint.
     """
 
     name: str
@@ -180,4 +182,3 @@ def parse_json_body(raw_body: bytes) -> Any | None:
         return json.loads(raw_body.decode("utf-8"))
     except (json.JSONDecodeError, UnicodeDecodeError):
         return None
-

@@ -62,6 +62,25 @@ def infer_event_type(headers: dict[str, str], payload: Any | None) -> str | None
     return None
 
 
+def infer_idempotency_key(
+    source: str,
+    headers: dict[str, str],
+    payload: Any | None,
+) -> str | None:
+    lowered = {key.lower(): value for key, value in headers.items()}
+    provider_key = (
+        lowered.get("x-idempotency-key")
+        or lowered.get("x-webhook-id")
+        or lowered.get("x-github-delivery")
+        or lowered.get("webhook-id")
+    )
+    if not provider_key and isinstance(payload, dict):
+        provider_key = payload.get("id") or payload.get("event_id") or payload.get("delivery_id")
+    if not provider_key:
+        return None
+    return f"{source}:{provider_key}"
+
+
 def create_api_router(
     event_repository: InMemoryEventRepository,
     rule_repository: InMemoryRuleRepository,
@@ -83,6 +102,13 @@ def create_api_router(
         background_tasks: BackgroundTasks,
     ) -> dict[str, Any]:
         raw_body = await request.body()
+        max_bytes = settings.max_body_kb * 1024
+        if len(raw_body) > max_bytes:
+            raise HTTPException(
+                status_code=413,
+                detail=f"Webhook body exceeds {settings.max_body_kb} KB limit",
+            )
+
         headers = dict(request.headers)
         query_params = dict(request.query_params)
         payload = parse_json_body(raw_body)
@@ -112,6 +138,7 @@ def create_api_router(
             raw_body=raw_body,
             json_payload=payload,
             event_type=infer_event_type(headers, payload),
+            idempotency_key=infer_idempotency_key(source, headers, payload),
             signature_valid=signature_valid,
             status=(
                 EventStatus.REJECTED
@@ -119,13 +146,25 @@ def create_api_router(
                 else EventStatus.RECEIVED
             ),
         )
-        event_repository.add(event)
-        await broadcaster.broadcast_json(
-            {"type": "event.received", "event": event.to_dict()}
-        )
+        saved_event, created = event_repository.add_if_new(event)
 
         if signature_valid is False:
             raise HTTPException(status_code=401, detail="Invalid webhook signature")
+
+        if not created:
+            await broadcaster.broadcast_json(
+                {"type": "event.duplicate", "event": saved_event.to_dict()}
+            )
+            return {
+                "event_id": saved_event.id,
+                "matched_rules": 0,
+                "signature_valid": signature_valid,
+                "duplicate": True,
+            }
+
+        await broadcaster.broadcast_json(
+            {"type": "event.received", "event": event.to_dict()}
+        )
 
         matched_rules = forwarding_service.matching_rules(
             event, rule_repository.list()
@@ -160,7 +199,7 @@ def create_api_router(
         event_type: str | None = None,
     ) -> dict[str, Any]:
         events = event_repository.list(
-            limit=limit,
+            limit=min(max(limit, 1), settings.max_list_limit),
             source=source,
             event_type=event_type,
         )
@@ -228,4 +267,3 @@ def create_api_router(
         await broadcaster.broadcast_json({"type": "rule.deleted", "rule_id": rule_id})
 
     return router
-
