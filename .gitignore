@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+.venv/
+venv/
+
+# FastAPI/local env
+.env
+backend/.env
+
+# Node/Vite
+node_modules/
+dist/
+coverage/
+frontend/.env.local
+
+# OS/editor
+.DS_Store
+.idea/
+.vscode/
+

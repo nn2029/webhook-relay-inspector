@@ -1,0 +1,27 @@
+{
+  "rules": [
+    {
+      "name": "Local checkout receiver",
+      "endpoint_url": "http://localhost:9000/webhooks/checkout",
+      "source": "stripe",
+      "event_type": "checkout.session.completed",
+      "header_matches": {},
+      "enabled": false,
+      "max_retries": 2,
+      "timeout_seconds": 5
+    },
+    {
+      "name": "GitHub push audit",
+      "endpoint_url": "http://localhost:9000/webhooks/github",
+      "source": "github",
+      "event_type": "push",
+      "header_matches": {
+        "x-github-event": "push"
+      },
+      "enabled": false,
+      "max_retries": 1,
+      "timeout_seconds": 4
+    }
+  ]
+}
+
